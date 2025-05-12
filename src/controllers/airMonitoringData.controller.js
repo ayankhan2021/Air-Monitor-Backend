@@ -344,61 +344,115 @@ const sendMicroControllerLocation = asyncHandler(async (req, res) => {
     "Locations fetched successfully"));
 });
 
-const uploadBinFile = (req, res) => {
+// Update these functions in your controller
+
+const uploadBinFile = asyncHandler(async (req, res) => {
   const { file } = req;
 
   if (!file) {
     return res.status(400).json(new ApiResponse(400, null, "No file uploaded"));
   }
 
+  // Store metadata about the firmware
+  const firmwareInfo = {
+    filename: file.originalname,
+    size: file.size,
+    path: file.path,
+    uploadDate: new Date(),
+    targetChipId: req.body.targetChipId || null // Optional: target specific device
+  };
+
+  console.log("Firmware uploaded:", firmwareInfo);
+
   return res
     .status(201)
-    .json(new ApiResponse(201, {}, "File uploaded successfully"));
-};
+    .json(new ApiResponse(201, firmwareInfo, "Firmware uploaded successfully"));
+});
 
-const getBinFile = (req, res) => {
+const getBinFile = asyncHandler(async (req, res) => {
   const firmwareDir = '/tmp';
 
   try {
     const files = fs.readdirSync(firmwareDir);
-    const firmwareFile = files.find(file => file.endsWith('.ino.bin'));
+    
+    // First try to find *.ino.bin files (Arduino uploads)
+    let firmwareFile = files.find(file => file.endsWith('.ino.bin'));
+    
+    // If no .ino.bin file found, try any .bin file
+    if (!firmwareFile) {
+      firmwareFile = files.find(file => file.endsWith('.bin'));
+    }
 
     if (!firmwareFile) {
       return res
         .status(404)
-        .json(new ApiResponse(404, null, 'No .ino.bin firmware file found'));
+        .json(new ApiResponse(404, null, 'No firmware file found'));
     }
 
     const filePath = path.join(firmwareDir, firmwareFile);
     console.log('Sending file:', filePath);
 
+    const deviceId = req.headers['x-chip-id']; 
+    if (deviceId) {
+      console.log(`Firmware requested by device: ${deviceId}`);
+    }
+
+    // Important: Set correct content-type for binary file
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${firmwareFile}"`);
-
-    res.sendFile(filePath, (err) => {
-      if (err) {
-        console.error('Error sending file:', err);
-        return res
-          .status(500)
-          .json(new ApiResponse(500, null, 'Error sending firmware file'));
-      }
-
-      fs.unlink(filePath, (unlinkErr) => {
-        if (unlinkErr) {
-          console.error('Error deleting file:', unlinkErr);
-        } else {
-          console.log('Firmware file deleted:', firmwareFile);
-        }
-      });
-    });
-
+    res.setHeader('Connection', 'close'); // Important for ESP32
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
   } catch (error) {
     console.error('Error in getBinFile:', error);
     return res
       .status(500)
       .json(new ApiResponse(500, null, 'Internal server error'));
   }
-};
+});
+
+// Add a new endpoint to get firmware info
+const getFirmwareInfo = asyncHandler(async (req, res) => {
+  const firmwareDir = '/tmp';
+
+  try {
+    const files = fs.readdirSync(firmwareDir);
+    
+    // First try to find *.ino.bin files (Arduino uploads)
+    let firmwareFile = files.find(file => file.endsWith('.ino.bin'));
+    
+    // If no .ino.bin file found, try any .bin file
+    if (!firmwareFile) {
+      firmwareFile = files.find(file => file.endsWith('.bin'));
+    }
+
+    if (!firmwareFile) {
+      return res
+        .status(404)
+        .json(new ApiResponse(404, null, 'No firmware file found'));
+    }
+
+    const filePath = path.join(firmwareDir, firmwareFile);
+    const stats = fs.statSync(filePath);
+    
+    const firmwareInfo = {
+      filename: firmwareFile,
+      size: stats.size,
+      uploadDate: stats.mtime
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, firmwareInfo, 'Firmware info retrieved successfully'));
+  } catch (error) {
+    console.error('Error getting firmware info:', error);
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, 'Failed to get firmware info'));
+  }
+});
 
 export {
   getAllAirData,
@@ -410,4 +464,5 @@ export {
   uploadBinFile,
   getBinFile,
   sendMicroControllerLocation,
+  getFirmwareInfo,
 };

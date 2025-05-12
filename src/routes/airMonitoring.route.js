@@ -8,7 +8,8 @@ import {
     saveSensorLocation,
     uploadBinFile,
     getBinFile,
-    sendMicroControllerLocation
+    sendMicroControllerLocation,
+    getFirmwareInfo
   } from "../controllers/airMonitoringData.controller.js";
   import { upload, deletePreviousBinFiles } from "../middlewares/fileUpload.middleware.js"
   import { Router } from "express";
@@ -23,6 +24,6 @@ import {
   airMonitoringRouter.get("/get-data-last-hour", getHalfHourlyAverages);
   airMonitoringRouter.post("/upload-bin-file", deletePreviousBinFiles,upload.single("file"), uploadBinFile);
   airMonitoringRouter.get("/firmware", getBinFile);
-  airMonitoringRouter.get("/get-controllers-location",sendMicroControllerLocation)
-  
+  airMonitoringRouter.get("/get-controllers-location",sendMicroControllerLocation);
+  airMonitoringRouter.get("/firmware-info", getFirmwareInfo);  
   export default airMonitoringRouter;
