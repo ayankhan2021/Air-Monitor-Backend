@@ -2,7 +2,6 @@ import express from "express"
 import cors from "cors"
 
 
-
 const app = express()
 
 
@@ -21,8 +20,16 @@ app.get('/', (req, res) => {
     res.send("Welcome to Air Monitoring API")
 })
 
+
+
 //Routes
 import airMonitoringRouter from './routes/airMonitoring.route.js'
+
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  next();
+});
 
 app.use('/api', airMonitoringRouter);
 
