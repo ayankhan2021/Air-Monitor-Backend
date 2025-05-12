@@ -5,6 +5,7 @@ import { SensorLocation } from "../models/sensorLocation.model.js";
 import { console } from "inspector";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 // @desc    Get all air monitoring data
 // @route   GET /api/air-monitoring/get-air-data
@@ -382,46 +383,108 @@ const uploadBinFile = asyncHandler(async (req, res) => {
 });
 
 const getBinFile = asyncHandler(async (req, res) => {
-  const firmwareDir = '/tmp';
-
   try {
-    const files = fs.readdirSync(firmwareDir);
-    
-    // First try to find *.ino.bin files (Arduino uploads)
-    let firmwareFile = files.find(file => file.endsWith('.ino.bin'));
-    
-    // If no .ino.bin file found, try any .bin file
-    if (!firmwareFile) {
-      firmwareFile = files.find(file => file.endsWith('.bin'));
-    }
-
-    if (!firmwareFile) {
-      return res
-        .status(404)
-        .json(new ApiResponse(404, null, 'No firmware file found'));
-    }
-
-    const filePath = path.join(firmwareDir, firmwareFile);
-    console.log('Sending file:', filePath);
-
+    // Log device info for debugging
     const deviceId = req.headers['x-chip-id']; 
     if (deviceId) {
       console.log(`Firmware requested by device: ${deviceId}`);
     }
-
-    // Important: Set correct content-type for binary file
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${firmwareFile}"`);
-    res.setHeader('Connection', 'close'); // Important for ESP32
     
-    // Stream the file
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
+    // Get all possible firmware directories in order of preference
+    const possibleDirs = [
+      '/tmp',                                    // Vercel primary location
+      path.join(os.tmpdir(), 'air-monitor-firmware'), // OS temp location
+      process.cwd()                              // Current working directory (fallback)
+    ];
+    
+    // Find the first directory that exists and contains firmware files
+    let firmwareFile = null;
+    let firmwareDir = null;
+    let filePath = null;
+    
+    for (const dir of possibleDirs) {
+      try {
+        console.log(`Checking directory: ${dir}`);
+        if (!fs.existsSync(dir)) {
+          console.log(`Directory does not exist: ${dir}`);
+          continue;
+        }
+        
+        const files = fs.readdirSync(dir);
+        console.log(`Files found in ${dir}:`, files);
+        
+        // First try to find *.ino.bin files (Arduino uploads)
+        firmwareFile = files.find(file => file.endsWith('.ino.bin'));
+        
+        // If no .ino.bin file found, try any .bin file
+        if (!firmwareFile) {
+          firmwareFile = files.find(file => file.endsWith('.bin'));
+        }
+        
+        if (firmwareFile) {
+          firmwareDir = dir;
+          filePath = path.join(dir, firmwareFile);
+          console.log(`Found firmware file: ${filePath}`);
+          break;
+        }
+      } catch (dirError) {
+        console.error(`Error accessing directory ${dir}:`, dirError);
+        // Continue to the next directory
+      }
+    }
+    
+    if (!firmwareFile || !filePath) {
+      console.error('No firmware file found in any of the directories');
+      return res
+        .status(404)
+        .json(new ApiResponse(404, null, 'No firmware file found'));
+    }
+    
+    // Try to access the file stats to verify it's readable
+    try {
+      const stats = fs.statSync(filePath);
+      console.log(`Firmware file stats:`, {
+        size: stats.size,
+        modified: stats.mtime,
+        isFile: stats.isFile()
+      });
+      
+      if (!stats.isFile()) {
+        throw new Error('Not a valid file');
+      }
+      
+      // Set appropriate headers for binary transfer
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', stats.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${firmwareFile}"`);
+      res.setHeader('Connection', 'close'); // Important for ESP32
+      
+      // Stream the file with proper error handling
+      const fileStream = fs.createReadStream(filePath);
+      
+      fileStream.on('error', (streamError) => {
+        console.error(`Error streaming firmware file:`, streamError);
+        if (!res.headersSent) {
+          return res.status(500).json(
+            new ApiResponse(500, null, 'Error streaming firmware file')
+          );
+        }
+      });
+      
+      // Use pipe to stream the file to response
+      fileStream.pipe(res);
+      
+    } catch (fileError) {
+      console.error('Error accessing firmware file:', fileError);
+      return res
+        .status(500)
+        .json(new ApiResponse(500, null, `Error accessing firmware file: ${fileError.message}`));
+    }
   } catch (error) {
     console.error('Error in getBinFile:', error);
     return res
       .status(500)
-      .json(new ApiResponse(500, null, 'Internal server error'));
+      .json(new ApiResponse(500, null, `Internal server error: ${error.message}`));
   }
 });
 
