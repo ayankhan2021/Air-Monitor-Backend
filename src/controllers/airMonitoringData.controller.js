@@ -347,26 +347,38 @@ const sendMicroControllerLocation = asyncHandler(async (req, res) => {
 // Update these functions in your controller
 
 const uploadBinFile = asyncHandler(async (req, res) => {
-  const { file } = req;
+  try {
+    // Log everything for debugging
+    console.log('Upload request received');
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+    console.log('Request files:', req.files);
+    
+    if (!req.file) {
+      console.error('No file in request');
+      return res.status(400).json(new ApiResponse(400, null, "No file uploaded"));
+    }
 
-  if (!file) {
-    return res.status(400).json(new ApiResponse(400, null, "No file uploaded"));
+    // Store metadata about the firmware
+    const firmwareInfo = {
+      filename: req.file.originalname,
+      size: req.file.size,
+      path: req.file.path,
+      uploadDate: new Date(),
+      targetChipId: req.body.targetChipId || null
+    };
+
+    console.log("Firmware uploaded:", firmwareInfo);
+
+    return res
+      .status(201)
+      .json(new ApiResponse(201, firmwareInfo, "Firmware uploaded successfully"));
+  } catch (error) {
+    console.error('Error in uploadBinFile:', error);
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, `Upload error: ${error.message}`));
   }
-
-  // Store metadata about the firmware
-  const firmwareInfo = {
-    filename: file.originalname,
-    size: file.size,
-    path: file.path,
-    uploadDate: new Date(),
-    targetChipId: req.body.targetChipId || null // Optional: target specific device
-  };
-
-  console.log("Firmware uploaded:", firmwareInfo);
-
-  return res
-    .status(201)
-    .json(new ApiResponse(201, firmwareInfo, "Firmware uploaded successfully"));
 });
 
 const getBinFile = asyncHandler(async (req, res) => {

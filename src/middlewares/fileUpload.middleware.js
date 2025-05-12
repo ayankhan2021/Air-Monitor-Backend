@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 // Function to get the appropriate upload directory
 const getUploadDir = () => {
